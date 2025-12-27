@@ -1,0 +1,220 @@
+// 데이터베이스 스키마 DBML 파일
+// 생성일: 2025-12-17
+// 목적: ERD 시각화 및 데이터베이스 문서화
+// 사용 도구: https://dbdiagram.io
+
+Project shoes_store_app {
+  database_type: 'SQLite'
+  Note: '신발 가게 앱 데이터베이스 스키마'
+}
+
+/*
+데이터베이스 관계도:
+
+Customer
+  ├─ Purchase (1:N)
+  │   └─ PurchaseItem (1:N)
+  │       └─ Product (N:1)
+  │           ├─ ProductBase (N:1)
+  │           │   └─ ProductImage (1:N)
+  │           └─ Manufacturer (N:1)
+  └─ LoginHistory (1:N)
+
+Employee (독립적, 현재 관계 없음)
+  - 비즈니스 로직을 통해 모든 Purchase/PurchaseItem 조회 가능
+  - DB 스키마 레벨에서는 FK 관계 없음
+*/
+
+// ============================================
+// 1. Customer (고객)
+// ============================================
+Table Customer {
+  id integer [primary key, increment, note: '고객 ID']
+  cEmail text [note: '이메일 주소 (UNIQUE)']
+  cPhoneNumber text [note: '전화번호 (UNIQUE)']
+  cName text [note: '고객 이름']
+  cPassword text [note: '비밀번호 (해시)']
+  
+  Note: '고객 정보를 저장하는 테이블'
+  
+  indexes {
+    cEmail [name: 'idx_customer_email', note: '이메일로 빠른 조회']
+    cPhoneNumber [name: 'idx_customer_phone', note: '전화번호로 빠른 조회']
+  }
+}
+
+// ============================================
+// 2. Employee (직원/관리자)
+// ============================================
+Table Employee {
+  id integer [primary key, increment, note: '직원 ID']
+  eEmail text [note: '이메일 주소 (UNIQUE)']
+  ePhoneNumber text [note: '전화번호 (UNIQUE)']
+  eName text [note: '직원 이름']
+  ePassword text [note: '비밀번호 (해시)']
+  eRole text [note: '역할 (예: 대리점장, 본사 임원)']
+  
+  Note: '''
+    직원 및 관리자 정보를 저장하는 테이블.
+    - 현재는 본사가 모든 재고를 관리
+    - 관리자는 애플리케이션 로직을 통해 모든 주문(Purchase) 및 반품 정보를 조회 가능
+    - DB 스키마 레벨에서는 직접적인 FK 관계는 없으나, 비즈니스 로직에서 Employee가 Purchase/PurchaseItem을 조회함
+    
+    [미래 확장 가능성]
+    - 결제 문서 (PaymentDocument): Employee가 결제 승인/처리 (Employee.id -> PaymentDocument.approverId)
+    - 발주 (PurchaseOrder): Employee(본사 임원)가 제조사에게 발주 요청 (Employee.id -> PurchaseOrder.requesterId, approverId)
+    - 수주 (ReceivingOrder): 발주한 제품 수령 처리 (Employee.id -> ReceivingOrder.receiverId)
+    - 재고 변화 이력 (InventoryHistory): 발주/수주에 따른 재고 증감 기록 (Employee.id -> InventoryHistory.processorId)
+    - 위 기능들이 구현되면 Employee와의 FK 관계가 추가될 수 있음
+  '''
+  
+  indexes {
+    eEmail [name: 'idx_employee_email', note: '이메일로 빠른 조회']
+    ePhoneNumber [name: 'idx_employee_phone', note: '전화번호로 빠른 조회']
+    eRole [name: 'idx_employee_role', note: '역할별 조회']
+  }
+}
+
+// ============================================
+// 3. Purchase (주문)
+// ============================================
+Table Purchase {
+  id integer [primary key, increment, note: '주문 ID']
+  cid integer [ref: > Customer.id, note: '고객 ID (FK)']
+  pickupDate text [note: '픽업 날짜 (ISO8601 형식)']
+  orderCode text [note: '주문 코드 (고유 식별자, UNIQUE)']
+  timeStamp text [note: '주문 시간 (ISO8601 형식)']
+  
+  Note: '고객의 주문 정보를 저장하는 테이블'
+  
+  indexes {
+    cid [name: 'idx_purchase_cid', note: '고객별 주문 조회']
+    orderCode [name: 'idx_purchase_order_code', note: '주문 코드로 빠른 조회']
+  }
+}
+
+// ============================================
+// 4. PurchaseItem (주문 항목)
+// ============================================
+Table PurchaseItem {
+  id integer [primary key, increment, note: '주문 항목 ID']
+  pid integer [ref: > Product.id, note: '제품 ID (FK)']
+  pcid integer [ref: > Purchase.id, note: '주문 ID (FK)']
+  pcQuantity integer [note: '구매 수량']
+  pcStatus text [note: '주문 상태 (결제 대기, Onway, Waiting for transaction, complete, return request, return done)']
+  
+  Note: '주문에 포함된 각 제품의 정보를 저장하는 테이블'
+  
+  indexes {
+    pcid [name: 'idx_purchase_item_pcid', note: '주문별 항목 조회']
+    pid [name: 'idx_purchase_item_pid', note: '제품별 주문 항목 조회']
+    pcStatus [name: 'idx_purchase_item_status', note: '상태별 조회']
+  }
+}
+
+// ============================================
+// 5. Product (제품)
+// ============================================
+Table Product {
+  id integer [primary key, increment, note: '제품 ID']
+  pbid integer [ref: > ProductBase.id, note: 'ProductBase ID (FK)']
+  mfid integer [ref: > Manufacturer.id, note: '제조사 ID (FK)']
+  size integer [note: '사이즈 (220, 230, 240 등)']
+  basePrice integer [note: '기본 가격']
+  pQuantity integer [note: '재고 수량 (본사가 중앙 관리)']
+  
+  Note: '제품의 사이즈, 가격, 재고 정보를 저장하는 테이블. 재고는 본사가 중앙 관리'
+  
+  indexes {
+    pbid [name: 'idx_product_pbid', note: 'ProductBase별 제품 조회']
+    mfid [name: 'idx_product_mfid', note: '제조사별 제품 조회']
+  }
+}
+
+// ============================================
+// 6. ProductBase (제품 기본 정보)
+// ============================================
+Table ProductBase {
+  id integer [primary key, increment, note: 'ProductBase ID']
+  pName text [note: '제품명 (예: U740WN2, 나이키 샥스 TL)']
+  pDescription text [note: '제품 설명']
+  pColor text [note: '색상 (예: Black, Gray, White)']
+  pGender text [note: '성별 (예: Unisex, Male, Female)']
+  pStatus text [note: '상태 (예: active, coming soon, inactive)']
+  pFeatureType text [note: '특징 타입']
+  pCategory text [note: '카테고리 (예: Running, Sneakers)']
+  pModelNumber text [note: '모델 번호']
+  
+  Note: '제품의 기본 정보(이름, 색상, 카테고리 등)를 저장하는 테이블'
+}
+
+// ============================================
+// 7. Manufacturer (제조사)
+// ============================================
+Table Manufacturer {
+  id integer [primary key, increment, note: '제조사 ID']
+  mName text [note: '제조사명 (예: 나이키, 뉴발란스)']
+  
+  Note: '제조사 정보를 저장하는 테이블'
+}
+
+// ============================================
+// 8. ProductImage (제품 이미지)
+// ============================================
+Table ProductImage {
+  id integer [primary key, increment, note: '이미지 ID']
+  pbid integer [ref: > ProductBase.id, note: 'ProductBase ID (FK)']
+  imagePath text [note: '이미지 경로 (assets 경로)']
+  
+  Note: '제품의 이미지 경로를 저장하는 테이블. 하나의 ProductBase에 여러 이미지를 저장 가능'
+  
+  indexes {
+    pbid [name: 'idx_product_image_pbid', note: 'ProductBase별 이미지 조회']
+  }
+}
+
+// ============================================
+// 9. LoginHistory (로그인 이력)
+// ============================================
+Table LoginHistory {
+  id integer [primary key, increment, note: '로그인 이력 ID']
+  cid integer [ref: > Customer.id, note: '고객 ID (FK)']
+  loginTime text [note: '로그인 시간 (ISO8601 형식)']
+  lStatus text [note: '회원 상태 (예: 활동 회원, 휴면 회원)']
+  lVersion real [note: '앱 버전']
+  lAddress text [note: '주소']
+  lPaymentMethod text [note: '결제 수단']
+  
+  Note: '고객의 로그인 이력을 저장하는 테이블'
+  
+  indexes {
+    cid [name: 'idx_login_history_cid', note: '고객별 로그인 이력 조회']
+  }
+}
+
+// ============================================
+// 관계 요약
+// ============================================
+// 
+// 물리적 관계 (FK):
+// Customer (1) -> Purchase (N)
+// Customer (1) -> LoginHistory (N)
+// Purchase (1) -> PurchaseItem (N)
+// Product (1) -> PurchaseItem (N)
+// ProductBase (1) -> Product (N)
+// ProductBase (1) -> ProductImage (N)
+// Manufacturer (1) -> Product (N)
+//
+// 논리적 관계 (비즈니스 로직):
+// Employee -> Purchase (관리자가 모든 주문 조회 가능, FK 없음)
+// Employee -> PurchaseItem (관리자가 모든 주문 항목 조회 가능, FK 없음)
+// Employee -> 반품 정보 (관리자가 반품 주문 조회 가능, FK 없음)
+//
+// [미래 확장 가능 관계]
+// Employee (1) -> PaymentDocument (N) - 결제 문서 승인/처리
+// Employee (1) -> PurchaseOrder (N) - 발주 요청/승인
+// Employee (1) -> ReceivingOrder (N) - 수주 처리
+// Employee (1) -> InventoryHistory (N) - 재고 변화 이력
+// PurchaseOrder (1) -> Product (N) - 발주에 따른 재고 증가
+// ReceivingOrder (1) -> Product (N) - 수주에 따른 재고 반영
+

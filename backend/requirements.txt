@@ -1,0 +1,16 @@
+# FastAPI 및 기본 의존성
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+
+# 데이터베이스 (pymysql 직접 사용)
+pymysql>=1.1.0
+
+# 유틸리티
+python-dotenv>=1.0.0  # 환경변수 관리 (선택사항)
+
+# 개발 도구 (선택사항)
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+httpx>=0.25.2  # 테스트용 HTTP 클라이언트
+
