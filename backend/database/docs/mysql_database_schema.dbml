@@ -1,0 +1,216 @@
+// MySQL 데이터베이스 스키마 DBML 파일
+// 생성일: 2025-12-28
+// 기반: backend/database/schema.sql (MySQL 8.0)
+// 목적: ERD 시각화 및 데이터베이스 문서화
+// 사용 도구: https://dbdiagram.io
+
+Project shoes_store_app {
+  database_type: 'MySQL'
+  Note: '신발 가게 앱 데이터베이스 스키마 (MySQL 8.0)'
+}
+
+/*
+데이터베이스 관계도:
+
+Customer
+  ├─ Purchase (1:N)
+  │   └─ PurchaseItem (1:N)
+  │       └─ Product (N:1)
+  │           ├─ ProductBase (N:1)
+  │           │   └─ ProductImage (1:N)
+  │           └─ Manufacturer (N:1)
+  └─ LoginHistory (1:N)
+
+Employee (독립적, 현재 관계 없음)
+  - 비즈니스 로직을 통해 모든 Purchase/PurchaseItem 조회 가능
+  - DB 스키마 레벨에서는 FK 관계 없음
+*/
+
+// ============================================
+// 1. Manufacturer (제조사)
+// ============================================
+Table Manufacturer {
+  id int [primary key, increment, note: '제조사 ID']
+  mName varchar(255) [not null, unique, note: '제조사명 (예: 나이키, 뉴발란스)']
+  
+  Note: '제조사 정보를 저장하는 테이블'
+  
+  indexes {
+    mName [name: 'idx_manufacturer_name', unique]
+  }
+}
+
+// ============================================
+// 2. ProductBase (제품 기본 정보)
+// ============================================
+Table ProductBase {
+  id int [primary key, increment, note: 'ProductBase ID']
+  pName varchar(255) [not null, note: '제품명 (예: U740WN2, 나이키 샥스 TL)']
+  pDescription text [note: '제품 설명']
+  pColor varchar(100) [note: '색상 (예: Black, Gray, White)']
+  pGender varchar(50) [note: '성별 (예: Unisex, Male, Female)']
+  pStatus varchar(100) [note: '상태 (예: active, coming soon, inactive)']
+  pFeatureType varchar(100) [note: '특징 타입']
+  pCategory varchar(100) [note: '카테고리 (예: Running, Sneakers)']
+  pModelNumber varchar(100) [note: '모델 번호']
+  
+  Note: '제품의 기본 정보(이름, 색상, 카테고리 등)를 저장하는 테이블. 같은 모델의 다른 색상은 허용'
+  
+  indexes {
+    (pModelNumber, pColor) [name: 'idx_productbase_model_color', unique]
+  }
+}
+
+// ============================================
+// 3. ProductImage (제품 이미지)
+// ============================================
+Table ProductImage {
+  id int [primary key, increment, note: '이미지 ID']
+  pbid int [not null, ref: > ProductBase.id, note: 'ProductBase ID (FK)']
+  imagePath varchar(500) [not null, note: '이미지 경로 (assets 경로)']
+  
+  Note: '제품의 이미지 경로를 저장하는 테이블. 하나의 ProductBase에 여러 이미지를 저장 가능'
+  
+  indexes {
+    pbid [name: 'idx_product_image_pbid']
+  }
+}
+
+// ============================================
+// 4. Product (제품)
+// ============================================
+Table Product {
+  id int [primary key, increment, note: '제품 ID']
+  pbid int [not null, ref: > ProductBase.id, note: 'ProductBase ID (FK)']
+  mfid int [not null, ref: > Manufacturer.id, note: '제조사 ID (FK)']
+  size int [not null, note: '사이즈 (220, 230, 240 등)']
+  basePrice int [not null, note: '기본 가격']
+  pQuantity int [not null, default: 0, note: '재고 수량 (본사가 중앙 관리)']
+  
+  Note: '제품의 사이즈, 가격, 재고 정보를 저장하는 테이블. 재고는 본사가 중앙 관리'
+  
+  indexes {
+    pbid [name: 'idx_product_pbid']
+    mfid [name: 'idx_product_mfid']
+    (pbid, size) [name: 'idx_product_pbid_size', unique]
+  }
+}
+
+// ============================================
+// 5. Customer (고객)
+// ============================================
+Table Customer {
+  id int [primary key, increment, note: '고객 ID']
+  cEmail varchar(255) [not null, unique, note: '이메일 주소']
+  cPhoneNumber varchar(50) [not null, unique, note: '전화번호']
+  cName varchar(255) [not null, note: '고객 이름']
+  cPassword varchar(255) [not null, note: '비밀번호 (해시)']
+  cProfileImage mediumblob [null, note: '프로필 이미지 (BLOB)']
+  
+  Note: '고객 정보를 저장하는 테이블'
+  
+  indexes {
+    cEmail [name: 'idx_customer_email', unique]
+    cPhoneNumber [name: 'idx_customer_phone', unique]
+  }
+}
+
+// ============================================
+// 6. Employee (직원/관리자)
+// ============================================
+Table Employee {
+  id int [primary key, increment, note: '직원 ID']
+  eEmail varchar(255) [not null, unique, note: '이메일 주소']
+  ePhoneNumber varchar(50) [not null, unique, note: '전화번호']
+  eName varchar(255) [not null, note: '직원 이름']
+  ePassword varchar(255) [not null, note: '비밀번호 (해시)']
+  eRole varchar(100) [note: '역할 (예: 대리점장, 본사 임원)']
+  eProfileImage mediumblob [null, note: '프로필 이미지 (BLOB)']
+  
+  Note: '''
+    직원 및 관리자 정보를 저장하는 테이블.
+    - 현재는 본사가 모든 재고를 관리
+    - 관리자는 애플리케이션 로직을 통해 모든 주문(Purchase) 및 반품 정보를 조회 가능
+    - DB 스키마 레벨에서는 직접적인 FK 관계는 없으나, 비즈니스 로직에서 Employee가 Purchase/PurchaseItem을 조회함
+  '''
+  
+  indexes {
+    eEmail [name: 'idx_employee_email', unique]
+    ePhoneNumber [name: 'idx_employee_phone', unique]
+    eRole [name: 'idx_employee_role']
+  }
+}
+
+// ============================================
+// 7. Purchase (주문)
+// ============================================
+Table Purchase {
+  id int [primary key, increment, note: '주문 ID']
+  cid int [not null, ref: > Customer.id, note: '고객 ID (FK)']
+  pickupDate varchar(50) [note: '픽업 날짜']
+  orderCode varchar(100) [not null, unique, note: '주문 코드 (고유 식별자)']
+  timeStamp varchar(50) [note: '주문 시간']
+  
+  Note: '고객의 주문 정보를 저장하는 테이블'
+  
+  indexes {
+    cid [name: 'idx_purchase_cid']
+    orderCode [name: 'idx_purchase_order_code', unique]
+  }
+}
+
+// ============================================
+// 8. PurchaseItem (주문 항목)
+// ============================================
+Table PurchaseItem {
+  id int [primary key, increment, note: '주문 항목 ID']
+  pid int [not null, ref: > Product.id, note: '제품 ID (FK)']
+  pcid int [not null, ref: > Purchase.id, note: '주문 ID (FK)']
+  pcQuantity int [not null, note: '구매 수량']
+  pcStatus varchar(100) [not null, note: '주문 상태 (결제 대기, Onway, Waiting for transaction, complete, return request, return done)']
+  
+  Note: '주문에 포함된 각 제품의 정보를 저장하는 테이블'
+  
+  indexes {
+    pcid [name: 'idx_purchase_item_pcid']
+    pid [name: 'idx_purchase_item_pid']
+    pcStatus [name: 'idx_purchase_item_status']
+  }
+}
+
+// ============================================
+// 9. LoginHistory (로그인 이력)
+// ============================================
+Table LoginHistory {
+  id int [primary key, increment, note: '로그인 이력 ID']
+  cid int [not null, ref: > Customer.id, note: '고객 ID (FK)']
+  loginTime varchar(50) [note: '로그인 시간']
+  lStatus varchar(50) [note: '회원 상태 (예: 활동 회원, 휴면 회원)']
+  lVersion decimal(5,2) [note: '앱 버전']
+  lAddress varchar(255) [note: '주소']
+  lPaymentMethod varchar(100) [note: '결제 수단']
+  
+  Note: '고객의 로그인 이력을 저장하는 테이블'
+  
+  indexes {
+    cid [name: 'idx_login_history_cid']
+  }
+}
+
+// ============================================
+// 관계 요약
+// ============================================
+// 
+// 물리적 관계 (FK, ON DELETE CASCADE):
+// Manufacturer (1) <- Product (N)
+// ProductBase (1) <- Product (N)
+// ProductBase (1) <- ProductImage (N)
+// Customer (1) <- Purchase (N)
+// Customer (1) <- LoginHistory (N)
+// Purchase (1) <- PurchaseItem (N)
+// Product (1) <- PurchaseItem (N)
+//
+// 논리적 관계 (비즈니스 로직):
+// Employee -> Purchase (관리자가 모든 주문 조회 가능, FK 없음)
+// Employee -> PurchaseItem (관리자가 모든 주문 항목 조회 가능, FK 없음)
+
