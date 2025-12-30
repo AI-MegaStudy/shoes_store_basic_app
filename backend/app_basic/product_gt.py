@@ -14,7 +14,6 @@ from fastapi import FastAPI, Form, UploadFile, File, Response
 from pydantic import BaseModel
 from typing import Optional
 from database.connection import connect_db
-import base64
 import datetime
 
 app = FastAPI()
@@ -25,10 +24,6 @@ port = 8000
 # ============================================
 # 모델 정의
 # ============================================
-# TODO: 테이블 컬럼에 맞게 모델 정의
-# - id는 Optional[int] = None 으로 정의 (자동 생성)
-# - 필수 컬럼은 타입만 지정 (예: cEmail: str)
-# - 선택 컬럼은 Optional로 지정 (예: cProfileImage: Optional[bytes] = None)
 class ProductModel(BaseModel):
     p_seq: Optional[int] = None
     kc_seq: int
@@ -111,73 +106,47 @@ async def select_all():
 # ============================================
 # 전체 조회 (Read All)
 # ============================================
-    #0 p_seq: Optional[int] = None
-    #1 kc_seq: int
-    #2 cc_seq: int
-    #3 sc_seq: int
-    #4 gc_seq: int
-    #5 m_seq: int
-    #6 p_name: str
-    #7 p_price: int
-    #8 p_stock: int
-    #9 p_image: Optional[str] = None
-    #10 p_color: str
-    #11 p_size: str
-    #12 p_gender: str
+# Todo: GT - search keywords validation (inject handle)   
 @app.get("/select_search")
 async def select_search(
+  maker: Optional[str]=None,
   kwds: Optional[str]=None,
   color: Optional[str]=None,
   kc_name: Optional[str]=None
 ):
+  
+  #### 쿼리 조건문 만들기
+  data = []
+  qry_condition = 'where 1=1 and '
+  if maker is not None:
+    qry_condition += 'ma.m_name=%s and '
+    data.append(maker)
+  kwds_condition = ''
+  if kwds is not None:
+    for kwd in kwds.split(' '):
+      kwds_condition += 'p.p_name like %s or '
+      data.append(f"%{kwd}%")
+  if kwds_condition != '':
+    qry_condition += f'({kwds_condition[0:len(kwds_condition)-3]}) and '
+  if color is not None:
+    qry_condition += 'cc.cc_name=%s and '
+    data.append(color)
+  qry_condition = qry_condition[0:len(qry_condition)-4]
+  #### END OF 쿼리 조건문 만들기
+
   conn = connect_db()
   try:
-    conditions = ''
-    data = []
     curs = conn.cursor()
-    if kc_name is not None:
-      curs.execute("""
-        select p.*,cc.cc_name as p_color,sc.sc_name as p_size,gc.gc_name as p_gender, ma.m_name
-        from product p 
-        inner join color_category cc on p.cc_seq=cc.cc_seq
-        inner join gender_category gc on p.gc_seq=gc.gc_seq
-        inner join size_category sc on p.sc_seq=sc.sc_seq
-        inner join maker ma on p.m_seq=ma.m_seq
-        where p_seq
-    """)
-    else: 
-
-      if kwds is not None:
-        
-        conditions += '('
-        for kwd in kwds.split(' '):
-          conditions += 'p.pname like %s or '
-          data.append(kwd)
-        conditions += ')'
-
-      if color is not None:
-        conditions += ' and p.color=%s'
-        data.append(color)
-      
-      curs.execute("""
+    curs.execute("""
           select p.*,cc.cc_name as p_color,sc.sc_name as p_size,gc.gc_name as p_gender, ma.m_name
           from product p 
           inner join color_category cc on p.cc_seq=cc.cc_seq
           inner join gender_category gc on p.gc_seq=gc.gc_seq
           inner join size_category sc on p.sc_seq=sc.sc_seq
-          inner join maker ma on p.m_seq=ma.m_seq
-          ORDER BY p.p_seq
-      """)
-
-
-    
-
-     
-
-
-    
+          inner join maker ma on p.m_seq=ma.m_seq 
+          """ + qry_condition,data
+    )
     rows = curs.fetchall()
-
     results = [{
         "p_seq": row[0],
         "kc_seq": row[1],
@@ -202,8 +171,6 @@ async def select_search(
     return {"result": "Error", "errorMsg": str(error)}
   finally:
      conn.close()
-
-
 
 # ============================================
 # 단일 조회 (Read One)

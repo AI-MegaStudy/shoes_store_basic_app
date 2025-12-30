@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from typing import Optional
 from database.connection import connect_db
 import base64
-
+from datetime import datetime
 
 app = FastAPI()
 ipAddress = "127.0.0.1"
@@ -40,7 +40,7 @@ class CustomerModel(BaseModel):
 # ============================================
 # 전체 조회 (Read All)
 # ============================================
-@app.get("/select_customers")
+@app.get("/select_users")
 async def select_all():
   conn = connect_db()
   try:
@@ -50,19 +50,23 @@ async def select_all():
     # id,cEmail,cPhoneNumber,cName,cPassword,cProfileImage
     curs.execute("""
         SELECT *
-        FROM Customer 
-        ORDER BY id
+        FROM user 
+        ORDER BY u_seq
     """)
     
     rows = curs.fetchall()
 
     results = [{
-        "id":row[0],
-        "cEmail":row[1],
-        "cPhoneNumber":row[2],
-        "cName":row[3],
-        "cPassword":row[4],
-        "cProfileImage": base64.b64encode(row[5])
+        "u_seq":row[0],
+        "u_id":row[1],
+        "u_password":row[2],
+        "u_name":row[3],
+        "u_phone":row[4],
+        "u_image": base64.b64encode(row[5]),
+        "u_address":row[6],
+        "created_at":row[7],
+        "u_quit_date":row[8]
+        
     } for row in rows]
   
     return {"results": results}
@@ -74,7 +78,7 @@ async def select_all():
 # ============================================
 # 단일 조회 (Read One)
 # ============================================
-@app.get("/select_customer/{item_id}")
+@app.get("/select_user/{item_id}")
 async def select_one(item_id: int):
   conn = connect_db()
   try:
@@ -83,24 +87,27 @@ async def select_one(item_id: int):
     # TODO: SQL 작성
     curs.execute("""
         SELECT *
-        FROM Customer
-        WHERE id = %s
+        FROM user
+        WHERE u_seq = %s
     """, (item_id,))
     
     row = curs.fetchone()
 
     
     if row is None:
-        return {"result": "Error", "message": "[테이블명] not found"}
+        return {"result": "Error", "message": "user not found"}
     
     # TODO: 결과 매핑
     result = {
-        "id":row[0],
-        "cEmail":row[1],
-        "cPhoneNumber":row[2],
-        "cName":row[3],
-        "cPassword":row[4],
-        "cProfileImage":base64.b64encode(row[5])
+        "u_seq":row[0],
+        "u_id":row[1],
+        "u_password":row[2],
+        "u_name":row[3],
+        "u_phone":row[4],
+        "u_image": base64.b64encode(row[5]),
+        "u_address":row[6],
+        "created_at":row[7],
+        "u_quit_date":row[8]
     }
     return {"result": result}
   except Exception as error:
@@ -111,33 +118,39 @@ async def select_one(item_id: int):
 # ============================================
 # 추가 (Create)
 # ============================================
-@app.post("/insert_customer")
+@app.post("/insert_user")
 async def insert_one(
-  cEmail:str = Form(...),
-  cPhoneNumber:str=Form(...),
-  cName:str=Form(...),
-  cPassword:str=Form(...),
-  file:Optional[UploadFile] = None
+  u_id:str = Form(...),
+  u_password:str=Form(...),
+  u_name:str=Form(...),
+  u_phone:str=Form(...),
+  u_image:Optional[UploadFile] = None,
+  u_address:str=Form(...),
+  created_at:Optional[str] = None,
+  u_quit:Optional[str] = None
 ):
+    if created_at is None:
+      created_at = datetime.now()
+
     conn = connect_db()
     try:
        
         curs = conn.cursor()
-
-        if file is not None:
+        
+        if u_image is not None:
           
-          imageData = await file.read()
+          imageData = await u_image.read()
           sql = """
-            INSERT INTO Customer (cEmail,cPhoneNumber,cName,cPassword,cProfileImage) 
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO user (u_id,u_password,u_name,u_phone,u_image,u_address,created_at) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
           """
-          curs.execute(sql, (cEmail, cPhoneNumber,cName,cPassword,imageData))
+          curs.execute(sql, (u_id,u_password,u_name,u_phone,imageData,u_address,created_at))
         else:
           sql = """
-            INSERT INTO Customer (cEmail,cPhoneNumber,cName,cPassword) 
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO user (u_id,u_password,u_name,u_phone,u_address,created_at) 
+            VALUES (%s, %s, %s, %s, %s, %s)
           """
-          curs.execute(sql, (cEmail, cPhoneNumber,cName,cPassword))
+          curs.execute(sql, (u_id,u_password,u_name,u_phone,u_address,created_at))
         
         conn.commit()
         inserted_id = curs.lastrowid
@@ -156,14 +169,13 @@ async def insert_one(
 # ============================================
 # TODO: 레코드 수정 API 구현
 # - 이미지 BLOB이 있는 경우: 이미지 제외/포함 두 가지 API 구현 권장
-@app.post("/update_customer")
+@app.post("/update_user")
 async def update_one(
-    item_id: int = Form(...),
-    cEmail:str = Form(...),
-    cPhoneNumber:str=Form(...),
-    cName:str=Form(...),
-    cPassword:str=Form(...),
-    file:Optional[UploadFile] = None
+    u_seq: int = Form(...),
+    u_name:str=Form(...),
+    u_phone:str=Form(...),
+    u_image:Optional[UploadFile] = None,
+    u_address:str=Form(...)
 ):
     conn = connect_db()
     try:
@@ -171,22 +183,22 @@ async def update_one(
         curs = conn.cursor()
         
         # File 
-        if file is not None:
+        if u_image is not None:
            
-          imageData = await file.read()
+          imageData = await u_image.read()
           sql = """
-              UPDATE Customer
-              SET cEmail=%s, cPhoneNumber=%s,cName=%s,cPassword=%s,cProfileImage=%s
-              WHERE id=%s
+              UPDATE user
+              SET u_name=%s, u_phone=%s,u_image=%s,u_address=%s
+              WHERE u_seq=%s
           """
-          curs.execute(sql, (cEmail, cPhoneNumber, cName, cPassword, imageData, item_id))
+          curs.execute(sql, (u_name, u_phone,imageData,u_address,u_seq))
         else:
           sql = """
-              UPDATE Customer
-              SET cEmail=%s, cPhoneNumber=%s,cName=%s,cPassword=%s
-              WHERE id=%s
+              UPDATE user
+              SET u_name=%s, u_phone=%s,u_address=%s
+              WHERE u_seq=%s
           """
-          curs.execute(sql, (cEmail, cPhoneNumber, cName, cPassword, item_id))
+          curs.execute(sql, (u_name, u_phone,u_address,u_seq))
         conn.commit()
         return {"result": "OK"}
     except Exception as e:
@@ -200,14 +212,14 @@ async def update_one(
 # ============================================
 # TODO: 레코드 삭제 API 구현
 # - FK 참조 시 삭제 실패할 수 있음 (에러 처리)
-@app.delete("/delete_customer/{item_id}")
+@app.delete("/delete_user/{item_id}")
 async def delete_one(item_id: int):
     conn = connect_db()
     try:
         
         curs = conn.cursor()
         
-        sql = "DELETE FROM Customer WHERE id=%s"
+        sql = "DELETE FROM user WHERE u_seq=%s"
         curs.execute(sql, (item_id,))
         
         conn.commit()
@@ -229,7 +241,7 @@ async def delete_one(item_id: int):
 # ============================================
 # [선택] 이미지 조회 (이미지 BLOB 컬럼이 있는 경우)
 # ============================================
-@app.get("/view_customer_image/{item_id}")
+@app.get("/view_user_image/{item_id}")
 async def select_one(item_id: int):
   conn = connect_db()
   try:
@@ -237,9 +249,9 @@ async def select_one(item_id: int):
     
     # TODO: SQL 작성
     curs.execute("""
-        SELECT cProfileImage
-        FROM Customer
-        WHERE id = %s
+        SELECT u_image
+        FROM user
+        WHERE u_seq = %s
     """, (item_id,))
     
     row = curs.fetchone()
@@ -265,7 +277,7 @@ async def select_one(item_id: int):
 # ============================================
 # TODO: 이미지만 별도로 업데이트
 # - UploadFile = File(...) 사용
-@app.post("/update_customer_image")
+@app.post("/update_uesr_image")
 async def update_image(
     item_id: int = Form(...),
     file: UploadFile = File(...)
@@ -275,7 +287,7 @@ async def update_image(
         
         conn = connect_db()
         curs = conn.cursor()
-        sql = "UPDATE Customer SET cProfileImage=%s WHERE id=%s"
+        sql = "UPDATE user SET u_image=%s WHERE u_seq=%s"
         curs.execute(sql, (image_data, item_id))
         conn.commit()
         
