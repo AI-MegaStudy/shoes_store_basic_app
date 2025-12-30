@@ -250,4 +250,3 @@ if __name__ == "__main__":
     print(f"   서버 주소: http://{ipAddress}:{port}")
     print(f"   Swagger UI: http://{ipAddress}:{port}/docs")
     uvicorn.run(app, host=ipAddress, port=port)
-
